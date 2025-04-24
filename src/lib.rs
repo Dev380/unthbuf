@@ -6,13 +6,12 @@
 #![allow(clippy::integer_division)]
 #![allow(clippy::implicit_return)]
 
-mod iter;
 mod fmt;
+mod iter;
 
 // cell layouts
 pub mod aligned;
 pub mod packed;
-
 
 /// A [`UnthBuf`] using the [`aligned::AlignedLayout`].
 pub type AlignedUnthBuf = UnthBuf<aligned::AlignedLayout>;
@@ -31,120 +30,123 @@ pub(crate) const BITS_PER_CELL: u8 = usize::BITS as u8;
 pub type Bits = core::num::NonZeroU8;
 
 /// A structure that holds a fixed buffer of `bits`-sized unsigned integer elements.
-/// 
+///
 /// Note: If the given bit-size is `0`, the internal buffer won't be allocated, and all operations are no-ops.
-/// 
+///
 /// Internally, the [`UnthBuf`] is a boxed slice of **cells**, each holding a set amount of elements.
-#[derive(Clone)]
 pub struct UnthBuf<CL: CellLayout> {
     /// Capacity of the buffer.
     pub(crate) capacity: usize,
-    
+
     /// Buffer of cells, containing [`Self::bits`]-sized unsigned integer elements.
     pub(crate) data: Box<[usize]>,
-    
+
     /// Bit-size of an individual element in [`Self::data`].
     pub(crate) bits: Bits,
-    
+
     /// Mask of bits covering a single element.
     pub(crate) mask: usize,
-    
+
     /// Elements per cell.
-    /// 
+    ///
     /// - When   aligned, this is an exact number.
     /// - When unaligned, this number is inexact.
     pub(crate) elpc: u8,
-    
+
     /// Marker for cell layout.
-    pub(crate) cell_layout: core::marker::PhantomData<CL>
+    pub(crate) cell_layout: core::marker::PhantomData<CL>,
 }
 
 /// The internal layout of the cells held by an [`UnthBuf`].
 pub trait CellLayout: Sized + Clone + Copy {
     /// Type representing an elements location.
     type Location;
-    
+
     /// Returns the amount of [`usize`]-cells needed to fit the given `capacity` × `bits` in.
     fn get_cell_count(capacity: usize, bits: Bits) -> usize;
-    
+
     /// Returns the exact amount of bits that are stored, excluding any padding.
     fn get_exact_bit_count(buf: &UnthBuf<Self>) -> usize;
-    
+
     /// Calculates the exact location of the given index.
-    /// 
+    ///
     /// The index is not required to be valid for this operation.
     fn location_of(buf: &UnthBuf<Self>, index: usize) -> Self::Location;
-    
+
     /// Stores the given value at the given UNCHECKED index in the buffer.
-    /// 
+    ///
     /// # Safety
     /// This function is safe if the provided index was tested with [`UnthBuf::is_index`]
     unsafe fn set_unchecked(buf: &mut UnthBuf<Self>, index: usize, value: usize);
-    
+
     /// Retrieves the value at the given UNCHECKED index from the buffer.
-    /// 
+    ///
     /// # Safety
     /// This function is safe if the provided index was tested with [`UnthBuf::is_index`]
     unsafe fn get_unchecked(buf: &UnthBuf<Self>, index: usize) -> usize;
 }
 
 impl<CL: CellLayout> UnthBuf<CL> {
-    
     /// Creates a new [`UnthBuf`] from the given `ExactSizeIterator` and `bits`-size,
     /// filling it with all elements from the provided iterator.
-    /// 
+    ///
     /// # Panic
     /// - Panics if the given iterators `len()` returns `0`.
     pub fn new_from_sized_iter<I>(bits: Bits, iter: I) -> Self
-        where I: Iterator<Item = usize> + core::iter::ExactSizeIterator
+    where
+        I: Iterator<Item = usize> + core::iter::ExactSizeIterator,
     {
         let mut new = Self::new(bits, iter.len());
         new.fill_from(iter);
         new
     }
-    
+
     /// Creates a new [`UnthBuf`] with the given `capacity` and `bits`-size,
     /// filling it with as many elements from the provided iterator as can fit.
-    /// 
+    ///
     /// # Panic
     /// - Panics if the given `capacity` is `0`.
     pub fn new_from_capacity_and_iter<I>(bits: Bits, capacity: usize, iter: I) -> Self
-        where I: Iterator<Item = usize>
+    where
+        I: Iterator<Item = usize>,
     {
         let mut new = Self::new(bits, capacity);
         new.fill_from(iter);
         new
     }
-    
+
     /// Creates a new [`UnthBuf`] with the given `capacity` and `bits`-size,
     /// filling it with the provided `default_value`.
-    /// 
+    ///
     /// # Panic
     /// - Panics if the given `capacity` is `0`.
     /// - Panics if the given `default_value` does not fit in `bits`.
     pub fn new_with_default(bits: Bits, capacity: usize, default_value: usize) -> Self {
         let mut new = Self::new(bits, capacity);
-        assert!(new.can_element_fit(default_value), "given default value (0x{default_value:X}) does not fit into {bits} bits");
-        
+        assert!(
+            new.can_element_fit(default_value),
+            "given default value (0x{default_value:X}) does not fit into {bits} bits"
+        );
+
         // The buffer is already zero-filled at creation.
         if default_value != 0 {
             new.fill_with(default_value);
         }
         new
     }
-    
+
     /// Creates a new [`UnthBuf`] with the given `capacity` and `bits`-size, filled with `0`.
-    /// 
+    ///
     /// # Panic
     /// - Panics if the given `capacity` is `0`.
     pub fn new(bits: Bits, capacity: usize) -> Self {
         assert!(capacity != 0, "cannot create buffer of 0 capacity");
-        
+
         let size = CL::get_cell_count(capacity, bits);
         let data = vec![0; size].into_boxed_slice();
         let mask = Self::mask_from_bits(bits.get());
         let elpc = BITS_PER_CELL.checked_div(bits.get()).unwrap_or(0);
-        
+
         Self {
             capacity,
             data,
