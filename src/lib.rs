@@ -334,6 +334,28 @@ impl<CL: CellLayout> UnthBuf<CL> {
     }
 }
 
+impl<CL: CellLayout> Clone for UnthBuf<CL> {
+    fn clone(&self) -> Self {
+        Self {
+            capacity: self.capacity,
+            data: self.data.clone(),
+            bits: self.bits,
+            mask: self.mask,
+            elpc: self.elpc,
+            cell_layout: self.cell_layout,
+        }
+    }
+
+    fn clone_from(&mut self, source: &Self) {
+        self.capacity = source.capacity;
+        self.data.clone_from(&source.data);
+        self.bits = source.bits;
+        self.mask = source.mask;
+        self.elpc = source.elpc;
+        self.cell_layout = source.cell_layout;
+    }
+}
+
 // TODO: Implement index-operator access; blocked on rust internals.
 // impl<const ALIGNED: bool> std::ops::Index<usize> for UnthBuf<ALIGNED> {
 //     type Output = usize;
