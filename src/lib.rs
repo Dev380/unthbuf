@@ -154,182 +154,194 @@ impl<CL: CellLayout> UnthBuf<CL> {
             cell_layout: core::marker::PhantomData,
         }
     }
-    
+
     /// Gets the capacity of this buffer / how many elements are stored within.
     #[inline(always)]
     pub fn get_capacity(&self) -> usize {
         self.capacity
     }
-    
+
     /// Gets a range of all valid indices of this buffer; the same as `0 .. get_capacity()`.
     #[inline(always)]
     pub fn get_indices(&self) -> core::ops::Range<usize> {
         0..self.capacity
     }
-    
+
     /// Returns the total amount of bits stored in this buffer, including all padding.
     #[inline(always)]
     pub fn get_total_bit_count(&self) -> usize {
         self.data.len() * BITS_PER_CELL as usize
     }
-    
+
     /// Returns the exact amount of bits that are stored, excluding any padding.
     #[inline(always)]
     pub fn get_exact_bit_count(&self) -> usize {
         CL::get_exact_bit_count(self)
     }
-    
+
     /// Returns the amount of bits that are padding.
     #[inline(always)]
     pub fn get_padding_bit_count(&self) -> usize {
         self.get_total_bit_count() - CL::get_exact_bit_count(self)
     }
-    
+
     // /// Gets the total amount of stored bytes in this buffer.
     // pub fn get_stored_byte_count(&self) -> usize {
     //     (self.capacity * self.bits as usize).div_ceil(8)
     // }
-    
+
     /// Returns a reference to the raw backing buffer of cells.
     #[inline(always)]
     pub fn raw(&self) -> &[usize] {
         &self.data
     }
-    
+
     /// Returns a mutable reference to the raw backing buffer of cells.
     #[inline(always)]
     pub fn raw_mut(&mut self) -> &mut [usize] {
         &mut self.data
     }
-    
+
     /// Gets the length of the backing buffer, in cells.
     #[inline(always)]
     pub fn raw_len(&self) -> usize {
         self.data.len()
     }
-    
+
     /// Gets the length of the backing buffer, in bytes.
     #[inline(always)]
     pub fn raw_byte_len(&self) -> usize {
-        self.data.len() * (usize::BITS/8) as usize
+        self.data.len() * (usize::BITS / 8) as usize
     }
-    
+
     /// Checks if the given value can be stored in this buffer.
     #[inline(always)]
     pub fn can_element_fit(&self, value: usize) -> bool {
         (value & self.mask) == value
     }
-    
+
     /// Returns the bitmask that is used to check if elements can fit in this buffer; see [`Self::can_element_fit`].
     #[inline(always)]
     pub fn get_element_mask(&self) -> usize {
         self.mask
     }
-    
+
     /// Returns the bit-size of the individual elements in this buffer.
     #[inline(always)]
     pub fn get_element_bits(&self) -> Bits {
         self.bits
     }
-    
+
     /// Is the given index (`0..self.capacity`) valid for this buffer?
     #[inline(always)]
     pub fn is_index(&self, index: usize) -> bool {
         index < self.capacity
     }
-    
+
     /// Is the given cell-id (`0..self.data.len()`) valid for this buffer?
-    /// 
+    ///
     /// i.e.: Does this point inside the *backing buffer*?
     #[inline(always)]
     pub fn is_cell(&self, cell: usize) -> bool {
         cell < self.data.len()
     }
-    
+
     /// Returns the location of the element at the given `index`.
     pub fn location_of(&self, index: usize) -> CL::Location {
         CL::location_of(self, index)
     }
-    
+
     /// Fills the buffer with the given value.
-    /// 
+    ///
     /// Filling with `0` is a memset, which is *very* fast.
     pub fn fill_with(&mut self, value: usize) {
         assert!(self.can_element_fit(value), "given value does not fit");
-        
+
         if value == 0 {
-            return self.fill_with_default()
+            return self.fill_with_default();
         }
-        
+
         for index in self.get_indices() {
-            unsafe {self.set_unchecked(index, value)};
+            unsafe { self.set_unchecked(index, value) };
         }
     }
-    
+
     /// Fills the buffer with `0`, clearing everything.
-    /// 
+    ///
     /// Filling with `0` is a memset, which is *very* fast.
     pub fn fill_with_default(&mut self) {
         self.data.fill(0);
     }
-    
+
     /// Fills the buffer with as many values from the given iterator as possible.
     pub fn fill_from(&mut self, iter: impl Iterator<Item = usize>) {
         for (index, value) in self.get_indices().zip(iter).fuse() {
-            unsafe {self.set_unchecked(index, value)};
+            unsafe { self.set_unchecked(index, value) };
         }
     }
-    
+
     /// Tries to set the element at the given `index` to the provided `value`.
-    /// 
+    ///
     /// # Errors
     /// - If the value does not fit; check with [`Self::can_element_fit`].
     /// - If the index is out of bounds; check with [`Self::is_index`].
     #[inline]
-    pub fn set(&mut self, index: usize, value: usize) -> Result<(),&'static str> {
-        if !self.can_element_fit(value) {return Err("value does not fit")}
-        if !self.is_index(index) {return Err("index is out-of-bounds")}
-        unsafe {self.set_unchecked(index, value);}
+    pub fn set(&mut self, index: usize, value: usize) -> Result<(), &'static str> {
+        if !self.can_element_fit(value) {
+            return Err("value does not fit");
+        }
+        if !self.is_index(index) {
+            return Err("index is out-of-bounds");
+        }
+        unsafe {
+            self.set_unchecked(index, value);
+        }
         Ok(())
     }
-    
+
     /// Set the element at the given `index` to the provided `value`, *without* checking bounds.
-    /// 
+    ///
     /// # Safety
     /// If the index is not within `0..self.capacity`, testable via [`Self::is_index`], this function will cause undefined behaviour.
     #[inline(always)]
     pub unsafe fn set_unchecked(&mut self, index: usize, value: usize) {
         CL::set_unchecked(self, index, value);
     }
-    
+
     /// Returns the element at the given `index`.
-    /// 
+    ///
     /// Out-of-bounds access will return [`Option::None`].
     #[inline]
     pub fn get(&self, index: usize) -> Option<usize> {
-        if !self.is_index(index) {return None}
-        Some(unsafe {self.get_unchecked(index)})
+        if !self.is_index(index) {
+            return None;
+        }
+        Some(unsafe { self.get_unchecked(index) })
     }
-    
+
     /// Returns the element at the given `index`, *without* checking bounds.
-    /// 
+    ///
     /// # Safety
     /// If the index is not within `0..self.capacity`, this function will cause undefined behaviour.
     #[inline(always)]
     pub unsafe fn get_unchecked(&self, index: usize) -> usize {
         CL::get_unchecked(self, index)
     }
-    
+
     /// Returns a LSB-first bitmask of the given bit-length.
-    /// 
+    ///
     /// Special case: Zero bits will return an empty mask.
     pub(crate) fn mask_from_bits(bits: u8) -> usize {
-        if bits == 0 {return 0}
-        if bits as u32 == usize::BITS {return usize::MAX}
+        if bits == 0 {
+            return 0;
+        }
+        if bits as u32 == usize::BITS {
+            return usize::MAX;
+        }
         if bits as u32 > usize::BITS {
             panic!("cannot store {bits} bits in usize ({})", usize::BITS)
         }
-        
+
         2_usize.pow(bits.into()) - 1
     }
 }
